@@ -9,96 +9,72 @@ from langchain_community.vectorstores import FAISS
 from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage
 
-# ------------------------------
-# Load environment variables
-# ------------------------------
+# Load API key
 load_dotenv()
-groq_apik = os.getenv("GROQ_API_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-# ------------------------------
 # Streamlit UI
-# ------------------------------
-st.set_page_config(page_title="Medical RAG Chatbot", layout="wide")
-st.title("🩺 Medical Chatbot (RAG)")
-st.caption("PDF-based medical assistant using Groq + FAISS")
+st.title("🩺 Medical Chatbot")
+st.write("Ask questions from the medical textbook")
 
-# ------------------------------
-# Cache heavy operations
-# ------------------------------
+# Load & process PDF (cached)
 @st.cache_resource
-def load_vectorstore():
+def prepare_vector():
     loader = PyPDFLoader("Gyton Medical Physiology.pdf")
-    docs = loader.load()
+    pages = loader.load()
 
-    text_splitter = RecursiveCharacterTextSplitter(
+    splitter = RecursiveCharacterTextSplitter(
         chunk_size=1000,
         chunk_overlap=200
     )
-    document = text_splitter.split_documents(docs)
+    chunks = splitter.split_documents(pages)
 
-    embedding = HuggingFaceEmbeddings(
+    embeddings = HuggingFaceEmbeddings(
         model_name="all-MiniLM-L6-v2"
     )
 
-    vector = FAISS.from_documents(document, embedding)
-    return vector
+    return FAISS.from_documents(chunks, embeddings)
 
-# ------------------------------
-# Load Vector Store & Model
-# ------------------------------
-vector = load_vectorstore()
+vector = prepare_vector()
+retriever = vector.as_retriever(k=4)
 
-retriever = vector.as_retriever(search_kwargs={"k": 4})
-
-model = ChatGroq(
+# Load LLM
+llm = ChatGroq(
     model="llama-3.1-8b-instant",
-    groq_api_key=groq_apik
+    groq_api_key=GROQ_API_KEY
 )
 
-# ------------------------------
-# User Input
-# ------------------------------
-query = st.text_input(
-    "Ask a medical question:",
-    placeholder="Explain cardiac output in simple terms"
+# User input
+question = st.text_input(
+    "Enter your question",
+    "Explain cardiac output in simple terms"
 )
 
-if st.button("Ask") and query:
-    with st.spinner("Retrieving answer..."):
+if st.button("Ask"):
+    docs = retriever.invoke(question)
 
-        # Retrieve documents
-        retrieved_docs = retriever.invoke(query)
+    context = "\n\n".join(doc.page_content for doc in docs)
 
-        # Combine context
-        context = "\n\n".join(
-            [doc.page_content for doc in retrieved_docs]
-        )
-
-        # Prompt (same as your code)
-        prompt = f"""
+    prompt = f"""
 You are a medical assistant.
-Answer the question strictly using the context below.
+Use ONLY the information below to answer.
 
 Context:
 {context}
 
 Question:
-{query}
+{question}
 
 Answer:
 """
 
-        response = model.invoke(
-            [HumanMessage(content=prompt)]
-        )
+    answer = llm.invoke(
+        [HumanMessage(content=prompt)]
+    )
 
-        # Display answer
-        st.subheader("🧠 Answer")
-        st.write(response.content)
+    st.subheader("Answer")
+    st.write(answer.content)
 
-        # Show sources
-        with st.expander("📄 Source Pages"):
-            for doc in retrieved_docs:
-                st.markdown(
-                    f"- Page **{doc.metadata.get('page', 'N/A')}**"
-                )
+    with st.expander("Source Pages"):
+        for doc in docs:
+            st.write("Page:", doc.metadata.get("page", "N/A"))
