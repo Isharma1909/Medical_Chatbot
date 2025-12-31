@@ -1,18 +1,64 @@
-import base64
-import requests
-import io
-from PIL import Image
-from dotenv import load_dotenv
 import os
-import logging
+from langchain_community.document_loaders import PyPDFLoader
 
-load_dotenv()
+loader = PyPDFLoader("Gyton Medical Physiology.pdf")
+docs = loader.load()
+docs
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-groq_api_key = os.getenv("GROQ_API_KEY")
+text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap = 200)
+document = text_splitter.split_documents(docs)
+document
 
-if not groq_api_key:
-    raise ValueError("Groq Api key is not set in env")
+from dotenv import load_dotenv
+load_dotenv() ##loading all the env variables
+
+groq_apik=os.getenv("GROQ_API_KEY")
+groq_apik
+
+##load a model
+
+from langchain_groq import ChatGroq
+model= ChatGroq(model="llama-3.1-8b-instant", groq_api_key=groq_apik)
+model
+
+from langchain_community.embeddings import HuggingFaceEmbeddings
+
+embedding = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+
+from langchain_community.vectorstores import FAISS
+
+vector = FAISS.from_documents(document, embedding)
+vector
+
+retriever = vector.as_retriever(
+    search_kwargs={"k": 4}
+)
+
+query = "Explain cardiac output in simple terms"
+
+retrieved_docs = retriever.invoke(query)
+
+# Combine text
+context = "\n\n".join([doc.page_content for doc in retrieved_docs])
+context
+
+from langchain_core.messages import HumanMessage
+
+prompt = f"""
+You are a medical assistant.
+Answer the question strictly using the context below.
+
+Context:
+{context}
+
+Question:
+{query}
+
+Answer:
+"""
+
+response = model.invoke([HumanMessage(content=prompt)])
+print(response.content)
 
