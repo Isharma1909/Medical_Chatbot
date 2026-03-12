@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Medical Chatbot</title>
+</head>
+
+<body>
+
+<h2>Medical Chatbot</h2>
+
+<input type="text" id="question" placeholder="Ask medical question">
+<button onclick="sendMessage()">Send</button>
+
+<p id="answer"></p>
+
+<script>
+
+async function sendMessage(){
+
+let question = document.getElementById("question").value
+
+let response = await fetch("/chat",{
+method:"POST",
+headers:{
+"Content-Type":"application/json"
+},
+body: JSON.stringify({
+message: question
+})
+})
+
+let data = await response.json()
+
+document.getElementById("answer").innerText = data.response
+}
+
+</script>
+
+</body>
+</html>
